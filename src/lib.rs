@@ -29,12 +29,12 @@ pub use traits::*;
 /// #[macro_use] extern crate cat;
 ///
 /// fn main() {
-///     let s = cat!('(', 'a', ')', String::from(" "), 12, " + ", 7, " = ", 12 + 7);
+///     let s = scat!('(', 'a', ')', String::from(" "), 12, " + ", 7, " = ", 12 + 7);
 ///
 ///     assert_eq!(s, "(a) 12 + 7 = 19");
 /// }
 /// ```
-#[macro_export] macro_rules! cat {
+#[macro_export] macro_rules! scat {
     ($($([$fmt:expr])* $obj:expr),*) => ({
         let len = cat_len!($($([$fmt])* $obj),*);
 
@@ -87,6 +87,37 @@ pub use traits::*;
 
 #[macro_export] macro_rules! fcat {
     ($file:expr, $($([$fmt:expr])* $obj:expr),*) => ({
-        $file.write_all(cat!($($([$fmt])* $obj),*).as_bytes())
+        use ::std::io::Write;
+        $file.write_all(scat!($($([$fmt])* $obj),*).as_bytes())
+    })
+}
+
+#[macro_export] macro_rules! fcatln {
+    ($file:expr, $($([$fmt:expr])* $obj:expr),*) => ({
+        fcat!($file, $($([$fmt])* $obj),*, '\n')
+    })
+}
+
+#[macro_export] macro_rules! errcat {
+    ($($([$fmt:expr])* $obj:expr),*) => ({
+        fcat!(::std::io::stderr(), $($([$fmt])* $obj),*).unwrap()
+    })
+}
+
+#[macro_export] macro_rules! errcatln {
+    ($($([$fmt:expr])* $obj:expr),*) => ({
+        errcat!($($([$fmt])* $obj),*, '\n')
+    })
+}
+
+#[macro_export] macro_rules! cat {
+    ($($([$fmt:expr])* $obj:expr),*) => ({
+        fcat!(::std::io::stdout(), $($([$fmt])* $obj),*).unwrap()
+    })
+}
+
+#[macro_export] macro_rules! catln {
+    ($($([$fmt:expr])* $obj:expr),*) => ({
+        cat!($($([$fmt])* $obj),*, '\n')
     })
 }
