@@ -1,24 +1,22 @@
 // Copyright (c) 2015, Sam Payson
 // 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 // 
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in all copies or
+// substantial portions of the Software.
 // 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use std::cmp;
+use std::io;
 use std::num::Wrapping;
 
 /// A trait for types that know how to display themselves.
@@ -26,9 +24,9 @@ pub trait Show {
     /// How many bytes will the utf8-encoded string representation of `self` take?
     fn len(&self) -> usize;
 
-    /// Write the string resentation of `self` to `buf`. The number of bytes written must be exactly
+    /// Write the string resentation of `self` to `w`. The number of bytes written must be exactly
     /// the same as the number returned by `self.len()`.
-    fn write(&self, buf: &mut String);
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize>;
 }
 
 /// A trait for types that know how to format another type.
@@ -36,9 +34,24 @@ pub trait Format<T> {
     /// How many bytes will the utf8-encoded string representation of `t` formatted by `self` take?
     fn len(&self, t: &T) -> usize;
 
-    /// Write the string resentation of `t` formatted by `self` to `buf`. The number of bytes
+    /// Write the string resentation of `t` formatted by `self` to `w`. The number of bytes
     /// written must be exactly the same as the number returned by `self.len(t)`.
-    fn write(&self, t: &T, buf: &mut String);
+    fn write<W: io::Write>(&self, t: &T, w: &mut W) -> io::Result<usize>;
+}
+
+pub struct Utf8Write<'x, W: io::Write + 'x>(pub &'x mut W);
+
+impl<'x, W: io::Write + 'x> Utf8Write<'x, W> {
+    fn push(&mut self, c: char) -> io::Result<usize> {
+        let mut buf = [0u8; 4];
+        let limit = c.encode_utf8(&mut buf).unwrap();
+
+        self.0.write_all(&buf[0..limit]).map(|()| limit)
+    }
+
+    fn push_str(&mut self, s: &str) -> io::Result<usize> {
+        self.0.write_all(s.as_bytes()).map(|()| s.len())
+    }
 }
 
 /// What should be printed before a positive integer?
@@ -109,57 +122,69 @@ impl<'x> Format<u64> for FormattedInt<'x> {
         self.with_fanciness(self.num_digits(*x))
     }
 
-    fn write(&self, x: &u64, buf: &mut String) {
+    fn write<W: io::Write>(&self, x: &u64, w: &mut W) -> io::Result<usize> {
+        let mut written = 0;
+
         let base = self.digits.len() as u64;
+
+        let mut utf8_w = Utf8Write(w);
 
         // Pad with the zero digit until the minimum width is reached.
         let padding = self.min_len - cmp::min(self.num_digits(*x), self.min_len);
 
-        match self.sign {
-            SignPolicy::Plus  => buf.push('+'),
-            SignPolicy::Space => buf.push(' '),
-            SignPolicy::Empty => (),
-        }
+        written += match self.sign {
+            SignPolicy::Plus  => try!(utf8_w.push('+')),
+            SignPolicy::Space => try!(utf8_w.push(' ')),
+            SignPolicy::Empty => 0,
+        };
 
-        buf.push_str(self.prefix);
+        written += try!(utf8_w.push_str(self.prefix));
 
         for _ in 0..padding {
-            buf.push(self.digits[0]);
+            written += try!(utf8_w.push(self.digits[0]));
         }
 
         let mut r = self.reverse(*x);
 
         if r == 0 {
-            buf.push(self.digits[0]);
+            written += try!(utf8_w.push(self.digits[0]));
         } else {
             while r != 0 {
-                buf.push(self.digits[(r % base) as usize]);
+                written += try!(utf8_w.push(self.digits[(r % base) as usize]));
                 r /= base;
             }
         }
 
-        buf.push_str(self.suffix);
+        Ok(written + try!(utf8_w.push_str(self.suffix)))
     }
 }
 
 impl<'x> Format<u32> for FormattedInt<'x> {
     fn len(&self, x: &u32) -> usize { Format::len(self, &(*x as u64)) }
-    fn write(&self, x: &u32, buf: &mut String) { Format::write(self, &(*x as u64), buf) }
+    fn write<W: io::Write>(&self, x: &u32, w: &mut W) -> io::Result<usize> {
+        Format::write(self, &(*x as u64), w)
+    }
 }
 
 impl<'x> Format<u16> for FormattedInt<'x> {
     fn len(&self, x: &u16) -> usize { Format::len(self, &(*x as u64)) }
-    fn write(&self, x: &u16, buf: &mut String) { Format::write(self, &(*x as u64), buf) }
+    fn write<W: io::Write>(&self, x: &u16, w: &mut W) -> io::Result<usize> {
+        Format::write(self, &(*x as u64), w)
+    }
 }
 
 impl<'x> Format<u8> for FormattedInt<'x> {
     fn len(&self, x: &u8) -> usize { Format::len(self, &(*x as u64)) }
-    fn write(&self, x: &u8, buf: &mut String) { Format::write(self, &(*x as u64), buf) }
+    fn write<W: io::Write>(&self, x: &u8, w: &mut W) -> io::Result<usize> {
+        Format::write(self, &(*x as u64), w)
+    }
 }
 
 impl<'x> Format<usize> for FormattedInt<'x> {
     fn len(&self, x: &usize) -> usize { Format::len(self, &(*x as u64)) }
-    fn write(&self, x: &usize, buf: &mut String) { Format::write(self, &(*x as u64), buf) }
+    fn write<W: io::Write>(&self, x: &usize, w: &mut W) -> io::Result<usize> {
+        Format::write(self, &(*x as u64), w)
+    }
 }
 
 impl<'x> Format<i64> for FormattedInt<'x> {
@@ -170,15 +195,15 @@ impl<'x> Format<i64> for FormattedInt<'x> {
         }
     }
 
-    fn write(&self, x: &i64, buf: &mut String) {
+    fn write<W: io::Write>(&self, x: &i64, w: &mut W) -> io::Result<usize> {
         if *x < 0 {
-            buf.push('-');
-            Format::write(&FormattedInt {
-                sign: SignPolicy::Empty,
-                .. *self
-            }, &(x.abs() as u64), buf);
+            Ok(try!(Utf8Write(w).push('-')) +
+                try!(Format::write(&FormattedInt {
+                    sign: SignPolicy::Empty,
+                    .. *self
+                }, &(x.abs() as u64), w)))
         } else {
-            Format::write(self, &(*x as u64), buf);
+            Format::write(self, &(*x as u64), w)
         }
     }
 }
@@ -196,35 +221,43 @@ impl Show for u64 {
         }, self)
     }
 
-    fn write(&self, buf: &mut String) {
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
         Format::write(&FormattedInt {
             prefix:  "",
             suffix:  "",
             digits:  DECIMAL_DIGITS,
             min_len: 0,
             sign:    SignPolicy::Empty,
-        }, self, buf)
+        }, self, w)
     }
 }
 
 impl Show for u32 {
     fn len(&self) -> usize { Show::len(&(*self as u64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as u64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as u64), w)
+    }
 }
 
 impl Show for u16 {
     fn len(&self) -> usize { Show::len(&(*self as u64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as u64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as u64), w)
+    }
 }
 
 impl Show for u8 {
     fn len(&self) -> usize { Show::len(&(*self as u64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as u64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as u64), w)
+    }
 }
 
 impl Show for usize {
     fn len(&self) -> usize { Show::len(&(*self as u64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as u64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as u64), w)
+    }
 }
 
 impl Show for i64 {
@@ -238,53 +271,76 @@ impl Show for i64 {
         }, self)
     }
 
-    fn write(&self, buf: &mut String) {
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
         Format::write(&FormattedInt {
             prefix:  "",
             suffix:  "",
             digits:  DECIMAL_DIGITS,
             min_len: 0,
             sign:    SignPolicy::Empty,
-        }, self, buf)
+        }, self, w)
     }
 }
 
 impl Show for i32 {
     fn len(&self) -> usize { Show::len(&(*self as i64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as i64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as i64), w)
+    }
 }
 
 impl Show for i16 {
     fn len(&self) -> usize { Show::len(&(*self as i64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as i64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as i64), w)
+    }
 }
 
 impl Show for i8 {
     fn len(&self) -> usize { Show::len(&(*self as i64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as i64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as i64), w)
+    }
 }
 
 impl Show for isize {
     fn len(&self) -> usize { Show::len(&(*self as i64)) }
-    fn write(&self, buf: &mut String) { Show::write(&(*self as i64), buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(&(*self as i64), w)
+    }
 }
 
 impl Show for str {
     fn len(&self) -> usize { self.len() }
-    fn write(&self, buf: &mut String) { buf.push_str(self) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Utf8Write(w).push_str(self)
+    }
 }
 
 impl<'x, T: ?Sized> Show for &'x T where T: Show {
     fn len(&self) -> usize { Show::len(*self) }
-    fn write(&self, buf: &mut String) { Show::write(*self, buf) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Show::write(*self, w)
+    }
 }
 
 impl Show for String {
     fn len(&self) -> usize { self.len() }
-    fn write(&self, buf: &mut String) { buf.push_str(&self[..]) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Utf8Write(w).push_str(&self[..])
+    }
 }
 
 impl Show for char {
     fn len(&self) -> usize { self.len_utf8() }
-    fn write(&self, buf: &mut String) { buf.push(*self) }
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        Utf8Write(w).push(*self)
+    }
+}
+
+impl<'x, T: ?Sized, U> Format<U> for &'x T where T: Format<U> {
+    fn len(&self, u: &U) -> usize { Format::len(*self, u) }
+    fn write<W: io::Write>(&self, u: &U, w: &mut W) -> io::Result<usize> {
+        Format::write(*self, u, w)
+    }
 }
