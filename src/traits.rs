@@ -149,7 +149,7 @@ impl<'x> Format<u64> for FormattedInt<'x> {
         if r == 0 {
             written += try!(utf8_w.push(self.digits[0]));
         } else {
-            while r != 0 {
+            for _ in 0..self.num_digits(*x) {
                 written += try!(utf8_w.push(self.digits[(r % base) as usize]));
                 r /= base;
             }
@@ -208,7 +208,18 @@ impl<'x> Format<i64> for FormattedInt<'x> {
     }
 }
 
-static DECIMAL_DIGITS: &'static [char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const DECIMAL_DIGITS: &'static [char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+const HEX_DIGITS: &'static [char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                                       'a', 'b', 'c', 'd', 'e', 'f'];
+
+pub const HEX: FormattedInt<'static> = FormattedInt {
+    prefix:  "",
+    suffix:  "",
+    digits:  HEX_DIGITS,
+    min_len: 0,
+    sign:    SignPolicy::Empty,
+};
 
 impl Show for u64 {
     fn len(&self) -> usize {
@@ -342,5 +353,20 @@ impl<'x, T: ?Sized, U> Format<U> for &'x T where T: Format<U> {
     fn len(&self, u: &U) -> usize { Format::len(*self, u) }
     fn write<W: io::Write>(&self, u: &U, w: &mut W) -> io::Result<usize> {
         Format::write(*self, u, w)
+    }
+}
+
+pub struct Rep(pub usize);
+
+impl<T> Format<T> for Rep
+where T: Show {
+    fn len(&self, t: &T) -> usize { self.0 * Show::len(t) }
+    fn write<W: io::Write>(&self, t: &T, w: &mut W) -> io::Result<usize> {
+        let mut len = 0;
+        for _ in 0..self.0 {
+            len += try!(Show::write(t, w));
+        }
+
+        Ok(len)
     }
 }

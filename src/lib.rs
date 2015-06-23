@@ -19,7 +19,7 @@
 
 mod traits;
 
-pub use traits::{Show, Format, SignPolicy, Utf8Write, FormattedInt};
+pub use traits::{Show, Format, SignPolicy, Utf8Write, FormattedInt, Rep, HEX};
 
 /// Concatenate objects into strings.
 /// 
@@ -71,12 +71,7 @@ pub use traits::{Show, Format, SignPolicy, Utf8Write, FormattedInt};
 /// Write the 
 #[macro_export] macro_rules! cat_write {
     ($buffer:expr, $($args:tt)*) => ({
-        (|| -> ::std::io::Result<usize> {
-            let mut written = 0;
-            produce_write_code!(written, $buffer, $($args)*);
-
-            Ok(written)
-        })()
+        produce_write_code!(0, $buffer, $($args)*)
     })
 }
 
@@ -107,24 +102,32 @@ pub use traits::{Show, Format, SignPolicy, Utf8Write, FormattedInt};
 }
 
 #[macro_export] macro_rules! produce_write_code {
-    ($written:expr, $str:expr, $fmt:expr ; $obj:expr) => ({
-        $written += try!($crate::Format::write(&$fmt, &$obj, $str))
+    ($written:expr, $w:expr, $fmt:expr ; $obj:expr) => ({
+        match $crate::Format::write(&$fmt, &$obj, $w) {
+            Ok(n)  => Ok(n + $written),
+            Err(e) => Err(e),
+        }
     });
 
-    ($written:expr, $str:expr, $fmt:expr ; $obj:expr, $($rest:tt)*) => ({
-        $written += try!($crate::Format::write(&$fmt, &$obj, $str));
-
-        produce_write_code!($written, $str, $($rest)*)
+    ($written:expr, $w:expr, $fmt:expr ; $obj:expr, $($rest:tt)*) => ({
+        match $crate::Format::write(&$fmt, &$obj, $w) {
+            Ok(n)  => produce_write_code!(n + $written, $w, $($rest)*),
+            Err(e) => Err(e),
+        }
     });
 
-    ($written:expr, $str:expr, $obj:expr) => ({
-        $written += try!($crate::Show::write(&$obj, $str));
+    ($written:expr, $w:expr, $obj:expr) => ({
+        match $crate::Show::write(&$obj, $w) {
+            Ok(n)  => Ok(n + $written),
+            Err(e) => Err(e),
+        }
     });
 
-    ($written:expr, $str:expr, $obj:expr, $($rest:tt)*) => ({
-        $written += try!($crate::Show::write(&$obj, $str));
-
-        produce_write_code!($written, $str, $($rest)*)
+    ($written:expr, $w:expr, $obj:expr, $($rest:tt)*) => ({
+        match $crate::Show::write(&$obj, $w) {
+            Ok(n)  => produce_write_code!(n + $written, $w, $($rest)*),
+            Err(e) => Err(e),
+        }
     })
 }
 
