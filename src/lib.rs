@@ -21,6 +21,28 @@ mod traits;
 
 pub use traits::{Show, Format, SignPolicy, Utf8Write, FormattedInt, Rep, HEX};
 
+
+/// Perform a cat which appends to an initial argument of type `String`.
+#[macro_export] macro_rules! strcat {
+
+    ($str:expr, $($args:tt)*) => {
+        use ::std::mem;
+
+        let mut v = mem::replace(&mut $str, String::new()).into_bytes();
+
+        fcat!(v, $($args)*).ok();
+
+        // Like with scat!, I'm not sure this should be the checked version. If we're appending to a
+        // String this is going to make the complexity skyrocket.
+        let s = match String::from_utf8(v) {
+            Ok(s) => s,
+            _     => panic!("strcat! macro generated invalid utf-8"),
+        };
+
+        mem::replace(&mut $str, s);
+    }
+}
+
 /// Concatenate objects into strings.
 /// 
 /// # Examples
