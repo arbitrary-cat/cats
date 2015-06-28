@@ -25,7 +25,7 @@ pub use traits::{Show, Format, SignPolicy, Utf8Write, FormattedInt, Rep, HEX};
 /// Perform a cat which appends to an initial argument of type `String`.
 #[macro_export] macro_rules! strcat {
 
-    ($str:expr, $($args:tt)*) => {
+    ($str:expr, $($args:tt)*) => ({
         use ::std::mem;
 
         let mut v = mem::replace(&mut $str, String::new()).into_bytes();
@@ -40,7 +40,7 @@ pub use traits::{Show, Format, SignPolicy, Utf8Write, FormattedInt, Rep, HEX};
         };
 
         mem::replace(&mut $str, s);
-    }
+    })
 }
 
 /// Concatenate objects into strings.
