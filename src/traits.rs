@@ -370,3 +370,20 @@ where T: Show {
         Ok(len)
     }
 }
+
+impl<T> Show for Option<T>
+where T: Show {
+    fn len(&self) -> usize {
+        match self {
+            &Some(ref t) => t.len(),
+            &None        => 0,
+        }
+    }
+
+    fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
+        match self {
+            &Some(ref t) => t.write(w),
+            &None        => Ok(0),
+        }
+    }
+}
